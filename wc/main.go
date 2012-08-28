@@ -65,6 +65,7 @@ func main() {
 			fmt.Fprintln(os.Stderr, err)
 		} else {
 			printCounts(w, nl, nw, nr, nc)
+			fmt.Fprintln(w, "")
 		}
 	}
 
