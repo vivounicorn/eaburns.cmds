@@ -18,6 +18,5 @@ gzip
 bzip
 dc
 bc
-sort (needs disk-based sort)
 diff
 sh (gosh?)
