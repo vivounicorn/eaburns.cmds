@@ -173,10 +173,11 @@ func (i listItem) printLong() error {
 	}
 	size := i.info.Size()
 	time := i.info.ModTime().Format("Jan 2 15:04")
-	_, err := fmt.Println(i.info.Mode().String(), userStr, gid, size, time, i.pathName())
-	errs = append(errs, err)
-	if errs == nil {
-		err = errs
+	if _, err := fmt.Println(i.info.Mode().String(), userStr, gid, size, time, i.pathName()); err != nil {
+		errs = append(errs, err)
 	}
-	return err
+	if errs == nil {
+		return nil
+	}
+	return errs
 }
