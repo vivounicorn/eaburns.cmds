@@ -76,6 +76,7 @@ func getItems(path string) ([]listItem, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer dir.Close()
 
 	var items []listItem
 	ents, err := dir.Readdirnames(-1)
