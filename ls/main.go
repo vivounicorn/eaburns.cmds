@@ -23,6 +23,15 @@ var (
 	classify      = flag.Bool("F", false, "Print / after directories")
 )
 
+type errors []error
+
+func (errs errors) Error() (s string) {
+	for _, e := range errs {
+		s += e.Error() + "\n"
+	}
+	return
+}
+
 func main() {
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: %s [options] [<path> ...]\n", os.Args[0])
@@ -38,12 +47,12 @@ func main() {
 	status := 0
 	var items listItems
 	for _, path := range paths {
-		if is, err := getItems(path); err != nil {
+		is, err := getItems(path)
+		if err != nil {
 			status = 1
 			fmt.Fprintln(os.Stderr, err)
-		} else {
-			items = append(items, is...)
 		}
+		items = append(items, is...)
 	}
 
 	sort.Sort(items)
@@ -78,18 +87,23 @@ func getItems(path string) ([]listItem, error) {
 	}
 	defer dir.Close()
 
-	var items []listItem
 	ents, err := dir.Readdirnames(-1)
 	if err != nil && err != io.EOF {
 		return nil, err
 	}
+
+	var items []listItem
+	var errs errors
 	for _, ent := range ents {
 		p := filepath.Join(path, ent)
-		info, err := os.Stat(p)
-		if err != nil {
-			return nil, err
+		if info, err := os.Stat(p); err != nil {
+			errs = append(errs, err)
+		} else {
+			items = append(items, listItem{p, info})
 		}
-		items = append(items, listItem{p, info})
+	}
+	if errs != nil {
+		err = errs
 	}
 	return items, err
 }
@@ -149,9 +163,10 @@ func (i listItem) printLong() error {
 		gid = int(sys.Gid)
 	}
 	userStr := strconv.Itoa(uid)
+	var errs errors
 	if !*numbers {
 		if u, err := user.LookupId(userStr); err != nil {
-			fmt.Fprintln(os.Stderr, err)
+			errs = append(errs, err)
 		} else {
 			userStr = u.Username
 		}
@@ -159,5 +174,9 @@ func (i listItem) printLong() error {
 	size := i.info.Size()
 	time := i.info.ModTime().Format("Jan 2 15:04")
 	_, err := fmt.Println(i.info.Mode().String(), userStr, gid, size, time, i.pathName())
+	errs = append(errs, err)
+	if errs == nil {
+		err = errs
+	}
 	return err
 }
