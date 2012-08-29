@@ -16,9 +16,6 @@ import (
 var (
 	listDirectory = flag.Bool("d", false, "List directories instead of their contents")
 	longFormat    = flag.Bool("l", false, "Print each item with a longer format")
-	numbers       = flag.Bool("n", false, "Print user ID numbers instead of user names")
-	timeSort      = flag.Bool("t", false, "Sort on modification time")
-	reverseSort   = flag.Bool("r", false, "Sort items in reverse")
 	baseName      = flag.Bool("p", false, "Only print the base name of each entry")
 	classify      = flag.Bool("F", false, "Print / after directories")
 )
@@ -127,14 +124,7 @@ func (l listItems) Swap(i, j int) {
 }
 
 func (l listItems) Less(i, j int) bool {
-	less := l[i].path < l[j].path
-	if *timeSort {
-		less = l[i].info.ModTime().After(l[j].info.ModTime())
-	}
-	if *reverseSort {
-		return !less
-	}
-	return less
+	return l[i].path < l[j].path
 }
 
 // pathName returns the path name of this item.
@@ -162,20 +152,23 @@ func (i listItem) printLong() error {
 		uid = int(sys.Uid)
 		gid = int(sys.Gid)
 	}
+
 	userStr := strconv.Itoa(uid)
 	var errs errors
-	if !*numbers {
-		if u, err := user.LookupId(userStr); err != nil {
-			errs = append(errs, err)
-		} else {
-			userStr = u.Username
-		}
+	if u, err := user.LookupId(userStr); err != nil {
+		errs = append(errs, err)
+	} else {
+		userStr = u.Username
 	}
+
 	size := i.info.Size()
 	time := i.info.ModTime().Format("Jan 2 15:04")
-	if _, err := fmt.Println(i.info.Mode().String(), userStr, gid, size, time, i.pathName()); err != nil {
+	mode := i.info.Mode().String()
+	name := i.pathName()
+	if _, err := fmt.Println(mode, userStr, gid, size, time, name); err != nil {
 		errs = append(errs, err)
 	}
+
 	if errs == nil {
 		return nil
 	}
