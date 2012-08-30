@@ -237,7 +237,7 @@ func merge(w io.Writer, paths []string) error {
 
 	var q mergeHeap
 	for _, p := range paths {
-		if ent, ok, err := makeHeapEntry(p); err != nil {
+		if ent, ok, err := newHeapEntry(p); err != nil {
 			return err
 		} else if ok {
 			heap.Push(&q, ent)
@@ -245,7 +245,7 @@ func merge(w io.Writer, paths []string) error {
 	}
 
 	for len(q) > 0 {
-		ent := heap.Pop(&q).(heapEntry)
+		ent := heap.Pop(&q).(*heapEntry)
 		line := ent.line
 		if ok, err := ent.next(); err != nil {
 			return err
@@ -266,12 +266,12 @@ type heapEntry struct {
 	file *os.File
 }
 
-func makeHeapEntry(path string) (heapEntry, bool, error) {
+func newHeapEntry(path string) (*heapEntry, bool, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return heapEntry{}, false, err
+		return &heapEntry{}, false, err
 	}
-	ent := heapEntry{
+	ent := &heapEntry{
 		lines: lines(bufio.NewReaderSize(f, bufSize)),
 		file: f,
 	}
@@ -292,7 +292,7 @@ func (h *heapEntry) next() (bool, error) {
 	return true, nil
 }
 
-type mergeHeap []heapEntry
+type mergeHeap []*heapEntry
 
 func (m mergeHeap) Len() int {
 	return len(m)
@@ -313,5 +313,5 @@ func (m *mergeHeap) Pop() interface{} {
 }
 
 func (m *mergeHeap) Push(x interface{}) {
-	*m = append(*m, x.(heapEntry))
+	*m = append(*m, x.(*heapEntry))
 }
