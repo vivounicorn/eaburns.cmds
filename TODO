@@ -1,0 +1,22 @@
+List sorted in order of expected simplicity:
+
+uniq
+tail
+head
+date
+rm
+rmdir
+cp
+mv
+watch
+realpath?
+nm
+test (-x may be hard since group stuff isn't really supported)
+mc
+tar
+gzip
+bzip
+dc
+bc
+diff
+sh (gosh?)
