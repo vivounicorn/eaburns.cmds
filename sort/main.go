@@ -144,8 +144,18 @@ func less(a, b string) bool {
 // from a slice of files are sent.
 func allLines(paths []string) <-chan strErr {
 	ch := make(chan strErr)
+	if len(paths) == 0 {
+		paths = []string{"-"}
+	}
 	go func() {
 		for _, p := range paths {
+			if p == "-" {	
+				in := bufio.NewReaderSize(os.Stdin, bufSize)
+				for l := range lines(in) {
+					ch <- l
+				}
+				continue
+			}
 			f, err := os.Open(p)
 			if err != nil {
 				ch <- strErr{err: err}
