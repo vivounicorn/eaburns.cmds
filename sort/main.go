@@ -8,6 +8,8 @@ import (
 	"io/ioutil"
 	"os"
 	"sort"
+	"flag"
+	"math"
 )
 
 const (
@@ -15,9 +17,13 @@ const (
 	mergeSize = 10
 )
 
+var nflag = flag.Bool("n", false, "Sort lines using a numeric prefix")
+
 func main() {
+	flag.Parse()
+
 	errs := make(chan error)
-	go mergeSort(os.Args[1:], errs)
+	go mergeSort(flag.Args(), errs)
 
 	status := 0
 	for err := range errs {
@@ -28,7 +34,7 @@ func main() {
 }
 
 func mergeSort(paths []string, errs chan<- error) {
-	lines := readAllLines(os.Args[1:], errs)
+	lines := readAllLines(paths, errs)
 	var tmps []string
 	for c := range chunks(lines, chunkSize) {
 		if len(tmps) == 0 && len(c) < chunkSize {
@@ -185,10 +191,19 @@ type line struct {
 }
 
 func makeLine(s string) line {
-	return line{str: s}
+	num := 0
+	if *nflag {
+		if n, err := fmt.Sscanf(s, "%d", &num); n != 1 || err != nil {
+			num = int(math.MinInt32)
+		}
+	}
+	return line{str: s, num: num}
 }
 
 func (a line) less(b line) bool {
+	if *nflag {
+		return a.num < b.num
+	}
 	return a.str < b.str
 }
 
