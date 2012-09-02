@@ -53,14 +53,7 @@ func mergeSort(paths []string, errs chan<- error) {
 		}
 	}
 
-	for len(tmps) > 0 {
-		if len(tmps) < mergeSize {
-			if err := merge(os.Stdout, tmps); err != nil {
-				errs <- err
-			}
-			break
-		}
-
+	for len(tmps) > mergeSize {
 		f, err := ioutil.TempFile(os.TempDir(), "sort")
 		if err != nil {
 			errs <- err
@@ -73,6 +66,11 @@ func mergeSort(paths []string, errs chan<- error) {
 			break
 		}
 		f.Close()
+	}
+	if len(tmps) > 0 {
+		if err := merge(os.Stdout, tmps); err != nil {
+			errs <- err
+		}
 	}
 
 out:
@@ -191,7 +189,7 @@ type line struct {
 }
 
 func makeLine(s string) line {
-	num := 0
+	var num int
 	if *nflag {
 		if n, err := fmt.Sscanf(s, "%d", &num); n != 1 || err != nil {
 			num = int(math.MinInt32)
