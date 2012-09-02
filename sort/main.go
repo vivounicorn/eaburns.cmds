@@ -1,72 +1,81 @@
 package main
 
 import (
-	"io"
 	"bufio"
+	"container/heap"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"os"
 	"sort"
-	"container/heap"
 )
 
 const (
-	// bufSize is the read and write buffer size.
-	bufSize = 8192
-
-	// chunkSize is the number of lines in allowed
-	// before going to disk.
 	chunkSize = 500000
-
-	// mergeSize is the number of files to merge
-	// at once.
 	mergeSize = 10
 )
 
 func main() {
+	errs := make(chan error)
+	go mergeSort(os.Args[1:], errs)
+
 	status := 0
+	for err := range errs {
+		fmt.Fprintln(os.Stderr, err)
+		status = 1
+	}
+	os.Exit(status)
+}
 
-	tmps := make([]string, 0)
-	for c := range chunks(allLines(os.Args[1:]), chunkSize) {
-		if c.err != nil {
-			fmt.Fprintln(os.Stderr, c.err)
-			status = 1
-			continue
-		}
-
-		// Check if we only have a single chunk, if so then
-		// just print it directly without going to a file.
-		if len(c.chunk) < chunkSize && len(tmps) == 0 {
-			for _, l := range c.chunk {
-				if _, err := fmt.Fprintln(os.Stdout, l); err != nil {
-					fmt.Fprintln(os.Stderr, err)
-					os.Exit(1)
-				}
+func mergeSort(paths []string, errs chan<- error) {
+	lines := readAllLines(os.Args[1:], errs)
+	var tmps []string
+	for c := range chunks(lines, chunkSize) {
+		if len(tmps) == 0 && len(c) < chunkSize {
+			out := bufio.NewWriter(os.Stdout)
+			defer out.Flush()
+			for _, l := range c {
+				fmt.Fprintln(out, l.str)
 			}
-			break
+			goto out
 		}
-
-		if tmp, err := writeChunk(c.chunk); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+		if tmp, err := writeChunk(c); err != nil {
+			errs <- err
+			goto out
 		} else {
 			tmps = append(tmps, tmp)
 		}
 	}
 
-	rm, err := mergeSort(tmps, mergeSize)
-	for _, p := range rm {
-		os.Remove(p)
-	}
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		status = 1
+	for len(tmps) > 0 {
+		if len(tmps) < mergeSize {
+			if err := merge(os.Stdout, tmps); err != nil {
+				errs <- err
+			}
+			break
+		}
+
+		f, err := ioutil.TempFile(os.TempDir(), "sort")
+		if err != nil {
+			errs <- err
+			break
+		}
+		err = merge(f, tmps[:mergeSize])
+		tmps = append(tmps[mergeSize:], f.Name())
+		if err != nil {
+			errs <- err
+			break
+		}
+		f.Close()
 	}
 
-	os.Exit(status)
+out:
+	for _, t := range tmps {
+		os.Remove(t)
+	}
+	close(errs)
 }
 
-// writeChunk writes the chunk to a temporary file.
 func writeChunk(c chunk) (string, error) {
 	f, err := ioutil.TempFile(os.TempDir(), "sort")
 	if err != nil {
@@ -74,11 +83,11 @@ func writeChunk(c chunk) (string, error) {
 	}
 	defer f.Close()
 
-	out := bufio.NewWriterSize(f, bufSize)
+	out := bufio.NewWriter(f)
 	defer out.Flush()
 
 	for _, l := range c {
-		if _, err := fmt.Fprintln(out, l); err != nil {
+		if _, err := fmt.Fprintln(out, l.str); err != nil {
 			os.Remove(f.Name())
 			return "", err
 		}
@@ -86,222 +95,179 @@ func writeChunk(c chunk) (string, error) {
 	return f.Name(), nil
 }
 
-// chunks returns a channel upon which
-// chunks of the file are sent.  All chunks
-// have n lines except for the final chunk
-// which may have fewer, each chunk is
-// sorted.
-func chunks(ls <-chan strErr, n int) <-chan chunkErr {
-	ch := make(chan chunkErr)
-	go func() {
-		c := make(chunk, 0, n)
-		for l := range ls {
-			if l.err != nil {
-				ch <- chunkErr{err: l.err}
-				continue
-			}
-			c = append(c, l.str)
-			if len(c) == n {
-				sort.Sort(c)
-				ch <- chunkErr{chunk: c}
-				c = make(chunk, 0, n)
-			}
-		}
-		if len(c) > 0 {
-			sort.Sort(c)
-			ch <- chunkErr{chunk: c}
-		}
-		close(ch)
-	}()
-	return ch
+type chunkFile struct {
+	file *os.File
+	in   *bufio.Reader
+	cur  line
 }
 
-// chunkErr is either a chunk of lines or an error.
-type chunkErr struct {
-	chunk chunk
-	err error
+func newChunkFile(p string) (*chunkFile, error) {
+	f, err := os.Open(p)
+	if err != nil {
+		return nil, err
+	}
+	in := bufio.NewReader(f)
+	// prefix cannot be true since we wrote these
+	// lines and we didn't write one that is too long.
+	bytes, _, err := in.ReadLine()
+	if err != nil {
+		os.Remove(f.Name())
+		f.Close()
+		return nil, err
+	}
+	return &chunkFile{file: f, in: in, cur: makeLine(string(bytes))}, nil
 }
 
-type chunk []string
+func (c *chunkFile) nextLine() error {
+	bytes, _, err := c.in.ReadLine()
+	if err != nil {
+		os.Remove(c.file.Name())
+		c.file.Close()
+		return err
+	}
+	c.cur = makeLine(string(bytes))
+	return nil
+}
+
+type chunkHeap []*chunkFile
+
+func (h chunkHeap) Len() int {
+	return len(h)
+}
+
+func (h chunkHeap) Less(i, j int) bool {
+	return h[i].cur.less(h[j].cur)
+}
+
+func (h chunkHeap) Swap(i, j int) {
+	h[i], h[j] = h[j], h[i]
+}
+
+func (h *chunkHeap) Push(x interface{}) {
+	*h = append(*h, x.(*chunkFile))
+}
+
+func (h *chunkHeap) Pop() interface{} {
+	x := (*h)[len(*h)-1]
+	*h = (*h)[:len(*h)-1]
+	return x
+}
+
+func merge(w io.Writer, paths []string) error {
+	var q chunkHeap
+	for _, p := range paths {
+		if c, err := newChunkFile(p); err != nil {
+			return err
+		} else {
+			heap.Push(&q, c)
+		}
+	}
+
+	out := bufio.NewWriter(w)
+	defer out.Flush()
+	for len(q) > 0 {
+		c := heap.Pop(&q).(*chunkFile)
+		if _, err := fmt.Fprintln(out, c.cur.str); err != nil {
+			return err
+		}
+		if err := c.nextLine(); err == nil {
+			heap.Push(&q, c)
+		} else if err != io.EOF {
+			return err
+		}
+	}
+	return nil
+}
+
+type line struct {
+	num int
+	str string
+}
+
+func makeLine(s string) line {
+	return line{str: s}
+}
+
+func (a line) less(b line) bool {
+	return a.str < b.str
+}
+
+type chunk []line
 
 func (c chunk) Len() int {
 	return len(c)
-}
-
-func (c chunk) Less(i, j int) bool {
-	return less(c[i], c[j])
 }
 
 func (c chunk) Swap(i, j int) {
 	c[i], c[j] = c[j], c[i]
 }
 
-func less(a, b string) bool {
-	return a < b
+func (c chunk) Less(i, j int) bool {
+	return c[i].less(c[j])
 }
 
-// allLines returns a channes on which lines
-// from a slice of files are sent.
-func allLines(paths []string) <-chan strErr {
-	ch := make(chan strErr)
-	go func() {
+func chunks(lines <-chan string, sz int) <-chan chunk {
+	ch := make(chan chunk)
+	go func(ch chan<- chunk) {
+		c := make(chunk, 0, sz)
+		for l := range lines {
+			c = append(c, makeLine(l))
+			if len(c) == sz {
+				sort.Sort(c)
+				ch <- c
+				c = make(chunk, 0, sz)
+			}
+		}
+		if len(c) > 0 {
+			sort.Sort(c)
+			ch <- c
+		}
+		close(ch)
+	}(ch)
+	return ch
+}
+
+func readAllLines(paths []string, errs chan<- error) <-chan string {
+	ch := make(chan string)
+	go func(lines chan<- string) {
+		if len(paths) == 0 {
+			paths = []string{"-"}
+		}
 		for _, p := range paths {
-			f, err := os.Open(p)
-			if err != nil {
-				ch <- strErr{err: err}
-				continue
-			}
-			for l := range lines(bufio.NewReaderSize(f, bufSize)) {
-				ch <- l
-			}
-			f.Close()
+			readLines(p, ch, errs)
 		}
 		close(ch)
-	}()
+	}(ch)
 	return ch
 }
 
-// lines returns a channel on which lines
-// from the given reader are sent.
-func lines(r *bufio.Reader) <-chan strErr {
-	ch := make(chan strErr)
-	go func() {
-		for {	
-			bytes, prefix, err := r.ReadLine()
-			if prefix {
-				ch <- strErr{err: fmt.Errorf("truncating long line")}
-				for prefix && err != nil {
-					_, prefix, err = r.ReadLine()
-				}
-			}
-			if err != nil {
-				if err != io.EOF {
-					ch <- strErr{err: err}
-				}
-				break
-			}
-			ch <- strErr{str: string(bytes)}
-		}
-		close(ch)
-	}()
-	return ch
-}
-
-// lineErr is either a string or an error.
-type strErr struct {
-	str string
-	err error
-}
-
-// mergeSort merges sorted files n at a time.
-// The returned slice contains temporary file
-// names that may need to be removed (some
-// may already be removed).
-func mergeSort(paths []string, n int) ([]string, error) {
-	for len(paths) > 0 {
-		if len(paths) <= n {
-			return nil, merge(os.Stdout, paths)
-		}
-
-		f, err := ioutil.TempFile(os.TempDir(), "sort")
+func readLines(path string, lines chan<- string, errs chan<- error) {
+	var r io.Reader = os.Stdin
+	if path != "-" {
+		f, err := os.Open(path)
 		if err != nil {
-			return paths, err
+			errs <- err
+			return
 		}
+		defer f.Close()
+		r = f
+	}
 
-		err = merge(f, paths[:n])
-		f.Close()
+	in := bufio.NewReader(r)
+	for {
+		bytes, prefix, err := in.ReadLine()
+		if prefix {
+			errs <- fmt.Errorf("%s: truncating long line", path)
+			for prefix && err != nil {
+				_, prefix, err = in.ReadLine()
+			}
+		}
 		if err != nil {
-			paths = append(paths, f.Name())
-			return paths, err
+			if err != io.EOF {
+				errs <- err
+			}
+			break
 		}
-		paths = append(paths[n:], f.Name())
+		lines <- string(bytes)
 	}
-	return paths, nil
-}
-
-// merge merges the given paths to a writer.
-// The merged paths are removed.
-func merge(w io.Writer, paths []string) error {
-	out := bufio.NewWriterSize(w, bufSize)
-	defer out.Flush()
-
-	var q mergeHeap
-	for _, p := range paths {
-		if ent, ok, err := makeHeapEntry(p); err != nil {
-			return err
-		} else if ok {
-			heap.Push(&q, ent)
-		}
-	}
-
-	for len(q) > 0 {
-		ent := heap.Pop(&q).(heapEntry)
-		line := ent.line
-		if ok, err := ent.next(); err != nil {
-			return err
-		} else if ok {
-			heap.Push(&q, ent)
-		}
-		if _, err := fmt.Fprintln(out, line); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-type heapEntry struct {
-	lines <-chan strErr
-	line string
-	file *os.File
-}
-
-func makeHeapEntry(path string) (heapEntry, bool, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return heapEntry{}, false, err
-	}
-	ent := heapEntry{
-		lines: lines(bufio.NewReaderSize(f, bufSize)),
-		file: f,
-	}
-	ok, err := ent.next()
-	return ent, ok, err
-}
-
-// next gets the next line for this file.  Returns true
-// if there was another line.
-func (h *heapEntry) next() (bool, error) {
-	l, ok := <- h.lines
-	if !ok || l.err != nil {
-		os.Remove(h.file.Name())
-		h.file.Close()
-		return false, l.err
-	}
-	h.line = l.str
-	return true, nil
-}
-
-type mergeHeap []heapEntry
-
-func (m mergeHeap) Len() int {
-	return len(m)
-}
-
-func (m mergeHeap) Less(i, j int) bool {
-	return less(m[i].line, m[j].line)
-}
-
-func (m mergeHeap) Swap(i, j int) {
-	m[i], m[j] = m[j], m[i]
-}
-
-func (m *mergeHeap) Pop() interface{} {
-	x := (*m)[len(*m)-1]
-	*m = (*m)[:len(*m)-1]
-	return x
-}
-
-func (m *mergeHeap) Push(x interface{}) {
-	*m = append(*m, x.(heapEntry))
 }
