@@ -80,6 +80,41 @@ out:
 	close(errs)
 }
 
+type chunk []line
+
+func (c chunk) Len() int {
+	return len(c)
+}
+
+func (c chunk) Swap(i, j int) {
+	c[i], c[j] = c[j], c[i]
+}
+
+func (c chunk) Less(i, j int) bool {
+	return c[i].less(c[j])
+}
+
+func chunks(lines <-chan string, sz int) <-chan chunk {
+	ch := make(chan chunk)
+	go func(ch chan<- chunk) {
+		c := make(chunk, 0, sz)
+		for l := range lines {
+			c = append(c, makeLine(l))
+			if len(c) == sz {
+				sort.Sort(c)
+				ch <- c
+				c = make(chunk, 0, sz)
+			}
+		}
+		if len(c) > 0 {
+			sort.Sort(c)
+			ch <- c
+		}
+		close(ch)
+	}(ch)
+	return ch
+}
+
 func writeChunk(c chunk) (string, error) {
 	f, err := ioutil.TempFile(os.TempDir(), "sort")
 	if err != nil {
@@ -203,41 +238,6 @@ func (a line) less(b line) bool {
 		return a.num < b.num
 	}
 	return a.str < b.str
-}
-
-type chunk []line
-
-func (c chunk) Len() int {
-	return len(c)
-}
-
-func (c chunk) Swap(i, j int) {
-	c[i], c[j] = c[j], c[i]
-}
-
-func (c chunk) Less(i, j int) bool {
-	return c[i].less(c[j])
-}
-
-func chunks(lines <-chan string, sz int) <-chan chunk {
-	ch := make(chan chunk)
-	go func(ch chan<- chunk) {
-		c := make(chunk, 0, sz)
-		for l := range lines {
-			c = append(c, makeLine(l))
-			if len(c) == sz {
-				sort.Sort(c)
-				ch <- c
-				c = make(chunk, 0, sz)
-			}
-		}
-		if len(c) > 0 {
-			sort.Sort(c)
-			ch <- c
-		}
-		close(ch)
-	}(ch)
-	return ch
 }
 
 func readAllLines(paths []string, errs chan<- error) <-chan string {
