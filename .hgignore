@@ -1,0 +1,10 @@
+syntab: glob
+cat/cat
+echo/echo
+false/false
+grep/grep
+ls/ls
+sort/sort
+touch/touch
+true/true
+wc/wc
