@@ -38,7 +38,7 @@ func main() {
 		file, err := os.Open(path)
 		if err != nil {
 			status = 1
-			fmt.Fprintln(os.Stderr, err)
+			os.Stderr.WriteString(err.Error()+"\n")
 			continue
 		}
 
@@ -47,7 +47,7 @@ func main() {
 
 		if err != nil {
 			status = 1
-			fmt.Fprintln(os.Stderr, err)
+			os.Stderr.WriteString(err.Error()+"\n")
 			continue
 		} else {
 			printCounts(w, nl, nw, nr, nc)
@@ -62,7 +62,7 @@ func main() {
 	if len(flag.Args()) == 0 {
 		if nl, nw, nr, nc, err := count(bufio.NewReader(os.Stdin)); err != nil {
 			status = 1
-			fmt.Fprintln(os.Stderr, err)
+			os.Stderr.WriteString(err.Error()+"\n")
 		} else {
 			printCounts(w, nl, nw, nr, nc)
 			fmt.Fprintln(w, "")

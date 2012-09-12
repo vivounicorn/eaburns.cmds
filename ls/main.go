@@ -47,7 +47,7 @@ func main() {
 		is, err := getItems(path)
 		if err != nil {
 			status = 1
-			fmt.Fprintln(os.Stderr, err)
+			os.Stderr.WriteString(err.Error()+"\n")
 		}
 		items = append(items, is...)
 	}
@@ -62,7 +62,7 @@ func main() {
 		}
 		if err != nil {
 			status = 1
-			fmt.Fprintln(os.Stderr, err)
+			os.Stderr.WriteString(err.Error()+"\n")
 		}
 	}
 
@@ -141,7 +141,7 @@ func (i listItem) pathName() string {
 
 // print prints the item.
 func (i listItem) print() error {
-	_, err := fmt.Println(i.pathName())
+	_, err := os.Stdout.WriteString(i.pathName()+"\n")
 	return err
 }
 

@@ -27,7 +27,7 @@ func main() {
 
 	status := 0
 	for err := range errs {
-		fmt.Fprintln(os.Stderr, err)
+		os.Stderr.WriteString(err.Error()+"\n")
 		status = 1
 	}
 	os.Exit(status)
@@ -41,7 +41,7 @@ func mergeSort(paths []string, errs chan<- error) {
 			out := bufio.NewWriter(os.Stdout)
 			defer out.Flush()
 			for _, l := range c {
-				fmt.Fprintln(out, l.str)
+				out.WriteString(l.str+"\n")
 			}
 			goto out
 		}
@@ -126,7 +126,7 @@ func writeChunk(c chunk) (string, error) {
 	defer out.Flush()
 
 	for _, l := range c {
-		if _, err := fmt.Fprintln(out, l.str); err != nil {
+		if _, err := out.WriteString(l.str+"\n"); err != nil {
 			os.Remove(f.Name())
 			return "", err
 		}
@@ -206,7 +206,7 @@ func merge(w io.Writer, paths []string) error {
 	defer out.Flush()
 	for len(q) > 0 {
 		c := heap.Pop(&q).(*chunkFile)
-		if _, err := fmt.Fprintln(out, c.cur.str); err != nil {
+		if _, err := out.WriteString(c.cur.str+"\n"); err != nil {
 			return err
 		}
 		if err := c.nextLine(); err == nil {
