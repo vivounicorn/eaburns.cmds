@@ -17,7 +17,7 @@ var (
 
 func main() {
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: %s [options] <regexp> [<path> ...]\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Usage: %s [options] [<path> ...]\n", os.Args[0])
 		flag.PrintDefaults()
 	}
 	flag.Parse()
@@ -28,7 +28,7 @@ func main() {
 	}
 	re, err := regexp.Compile(flag.Arg(0))
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		os.Stderr.WriteString(err.Error()+"\n")
 		os.Exit(1)
 	}
 	if len(flag.Args()) == 1 {
@@ -39,12 +39,12 @@ func main() {
 		file, err := os.Open(path)
 		if err != nil {
 			status = 1
-			fmt.Fprintln(os.Stderr, err)
+			os.Stderr.WriteString(err.Error()+"\n")
 			continue
 		}
 		if err := grep(re, path, file); err != nil {
 			status = 1
-			fmt.Fprintln(os.Stderr, err)
+			os.Stderr.WriteString(err.Error()+"\n")
 		}
 		file.Close()
 	}
@@ -67,12 +67,12 @@ func grep(re *regexp.Regexp, path string, r io.Reader) error {
 			match := re.Match(line)
 			if (match && !*vFlag) || (!match && *vFlag) {
 				if *nFlag && path != "" {
-					fmt.Print(path, ":")
+					os.Stdout.WriteString(path+":")
 				}
 				if *nFlag {
 					fmt.Print(lineNo, ":")
 				}
-				fmt.Println(string(line))
+				os.Stdout.WriteString(string(line)+"\n")
 			}
 		}
 	}

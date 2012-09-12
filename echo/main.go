@@ -3,7 +3,7 @@ package main
 
 import (
 	"flag"
-	"fmt"
+	"os"
 )
 
 var nflag = flag.Bool("n", false, "Elide the final newline")
@@ -12,12 +12,12 @@ func main() {
 	flag.Parse()
 	args := flag.Args()
 	if len(args) > 0 {
-		fmt.Print(args[0])
+		os.Stdout.WriteString(args[0])
 		for _, s := range args[1:] {
-			fmt.Print(" ", s)
+			os.Stdout.WriteString(" "+s)
 		}
 	}
 	if !*nflag {
-		fmt.Println("")
+		os.Stdout.WriteString("\n")
 	}
 }
