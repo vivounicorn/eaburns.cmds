@@ -37,7 +37,7 @@ func mergeSort(paths []string, errs chan<- error) {
 	lines := readAllLines(paths, errs)
 	var tmps []string
 	for c := range chunks(lines, chunkSize) {
-		if len(tmps) == 0 && len(c) < chunkSize {
+		if len(c) < chunkSize && len(tmps) == 0 {
 			out := bufio.NewWriter(os.Stdout)
 			defer out.Flush()
 			for _, l := range c {
@@ -61,11 +61,11 @@ func mergeSort(paths []string, errs chan<- error) {
 		}
 		err = merge(f, tmps[:mergeSize])
 		tmps = append(tmps[mergeSize:], f.Name())
+		f.Close()
 		if err != nil {
 			errs <- err
 			break
 		}
-		f.Close()
 	}
 	if len(tmps) > 0 {
 		if err := merge(os.Stdout, tmps); err != nil {
