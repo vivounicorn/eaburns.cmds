@@ -1,3 +1,10 @@
+fmt.Print<whatever> should be changed to Stdout.Write()
+or Stderr.WriteString() in a lot of places.  These functions
+are guaranteed to return an error on a short write and
+so they are more useful than I initially suspected.  Same
+goes for bufio!
+
+
 List sorted in order of expected simplicity:
 
 uniq
